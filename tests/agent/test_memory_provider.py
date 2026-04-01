@@ -25,6 +25,7 @@ class FakeMemoryProvider(MemoryProvider):
         self.synced_turns = []
         self.prefetch_queries = []
         self.queued_prefetches = []
+        self.queued_prefetch_details = []
         self.turn_starts = []
         self.session_end_called = False
         self.pre_compress_called = False
@@ -51,8 +52,15 @@ class FakeMemoryProvider(MemoryProvider):
         self.prefetch_queries.append(query)
         return self._prefetch_result
 
-    def queue_prefetch(self, query, *, session_id=""):
+    def queue_prefetch(self, query, *, session_id="", assistant_response=""):
         self.queued_prefetches.append(query)
+        self.queued_prefetch_details.append(
+            {
+                "query": query,
+                "session_id": session_id,
+                "assistant_response": assistant_response,
+            }
+        )
 
     def sync_turn(self, user_content, assistant_content, *, session_id=""):
         self.synced_turns.append((user_content, assistant_content))
@@ -219,6 +227,29 @@ class TestMemoryManager:
         mgr.queue_prefetch_all("next turn")
         assert p1.queued_prefetches == ["next turn"]
         assert p2.queued_prefetches == ["next turn"]
+
+    def test_queue_prefetch_all_passes_assistant_response(self):
+        mgr = MemoryManager()
+        p1 = FakeMemoryProvider("builtin")
+        p2 = FakeMemoryProvider("external")
+        mgr.add_provider(p1)
+        mgr.add_provider(p2)
+
+        mgr.queue_prefetch_all("next turn", assistant_response="here's the plan")
+        assert p1.queued_prefetch_details == [
+            {
+                "query": "next turn",
+                "session_id": "",
+                "assistant_response": "here's the plan",
+            }
+        ]
+        assert p2.queued_prefetch_details == [
+            {
+                "query": "next turn",
+                "session_id": "",
+                "assistant_response": "here's the plan",
+            }
+        ]
 
     def test_sync_all(self):
         mgr = MemoryManager()

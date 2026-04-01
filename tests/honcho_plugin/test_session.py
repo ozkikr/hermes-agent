@@ -190,7 +190,6 @@ class TestManagerCacheOps:
         s1_info = next(s for s in sessions if s["key"] == "k1")
         assert s1_info["message_count"] == 1
 
-
 class TestPeerLookupHelpers:
     def _make_cached_manager(self):
         mgr = HonchoSessionManager()
@@ -361,3 +360,31 @@ class TestDialecticInputGuard:
         # The query passed to chat() should be truncated
         actual_query = mock_peer.chat.call_args[0][0]
         assert len(actual_query) <= 100
+
+
+class TestDialecticPrefetchQueryFraming:
+    def test_frames_query_as_context_retrieval(self):
+        mgr = HonchoSessionManager()
+
+        framed = mgr.frame_dialectic_prefetch_query(
+            "what next?",
+            assistant_response="here's the plan",
+        )
+
+        assert "retrieve any relevant context from memory" in framed
+        assert "Do NOT answer the user's question" in framed
+        assert "User: what next?" in framed
+        assert "Assistant: here's the plan" in framed
+
+    def test_truncates_long_assistant_preview(self):
+        mgr = HonchoSessionManager()
+        assistant_response = ("alpha " * 200).strip()
+
+        framed = mgr.frame_dialectic_prefetch_query(
+            "what next?",
+            assistant_response=assistant_response,
+        )
+
+        assistant_line = framed.splitlines()[-1]
+        assert assistant_line.startswith("Assistant: ")
+        assert assistant_line.endswith(" …")

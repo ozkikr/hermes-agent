@@ -103,12 +103,22 @@ class MemoryProvider(ABC):
         """
         return ""
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         """Queue a background recall for the NEXT turn.
 
         Called after each turn completes. The result will be consumed
         by prefetch() on the next turn. Default is no-op — providers
         that do background prefetching should override this.
+
+        assistant_response is the just-completed assistant reply. Most
+        providers can ignore it; providers that prefetch from the latest
+        exchange can use it to improve next-turn continuity.
         """
 
     def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "") -> None:

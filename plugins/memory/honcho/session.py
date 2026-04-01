@@ -576,7 +576,28 @@ class HonchoSessionManager:
             logger.warning("Honcho dialectic query failed: %s", e)
             return ""
 
-    def prefetch_dialectic(self, session_key: str, query: str) -> None:
+    def frame_dialectic_prefetch_query(
+        self,
+        query: str,
+        assistant_response: str = "",
+    ) -> str:
+        """Frame the latest exchange as retrieval for next-turn continuity."""
+        parts = [
+            "The following is the latest exchange between the user and their AI assistant (Hermes). "
+            "Based on this conversation, retrieve any relevant context from memory that would help "
+            "the assistant continue effectively in the next turn. Focus on continuity: what was being "
+            "worked on, relevant preferences, prior decisions, and unresolved items. "
+            "Do NOT answer the user's question — just provide relevant context.\n"
+        ]
+        parts.append(f"User: {query}")
+        if assistant_response:
+            resp_preview = assistant_response[:800]
+            if len(assistant_response) > 800:
+                resp_preview = resp_preview.rsplit(" ", 1)[0] + " …"
+            parts.append(f"Assistant: {resp_preview}")
+        return "\n".join(parts)
+
+    def prefetch_dialectic(self, session_key: str, query: str, assistant_response: str = "") -> None:
         """
         Fire a dialectic_query in a background thread, caching the result.
 
@@ -584,12 +605,23 @@ class HonchoSessionManager:
         on the next call (typically the following turn). Reasoning level
         is selected dynamically based on query complexity.
 
+        The raw user message is wrapped with a retrieval-oriented prefix
+        so Honcho's LLM understands it should provide relevant context,
+        not answer the user's question directly.
+
         Args:
             session_key: The session key to query against.
             query: The user's current message, used as the query.
+            assistant_response: The assistant's response to the user message,
+                included for richer context about the conversation state.
         """
+        framed_query = self.frame_dialectic_prefetch_query(
+            query,
+            assistant_response=assistant_response,
+        )
+
         def _run():
-            result = self.dialectic_query(session_key, query)
+            result = self.dialectic_query(session_key, framed_query)
             if result:
                 self.set_dialectic_result(session_key, result)
 

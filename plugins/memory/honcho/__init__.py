@@ -466,7 +466,13 @@ class HonchoMemoryProvider(MemoryProvider):
             truncated = truncated[:last_space]
         return truncated + " …"
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         """Fire a background dialectic query for the upcoming turn.
 
         B5: Checks cadence before firing background threads.
@@ -491,8 +497,12 @@ class HonchoMemoryProvider(MemoryProvider):
 
         def _run():
             try:
+                framed_query = self._manager.frame_dialectic_prefetch_query(
+                    query,
+                    assistant_response=assistant_response,
+                )
                 result = self._manager.dialectic_query(
-                    self._session_key, query, peer="user"
+                    self._session_key, framed_query, peer="user"
                 )
                 if result and result.strip():
                     with self._prefetch_lock:

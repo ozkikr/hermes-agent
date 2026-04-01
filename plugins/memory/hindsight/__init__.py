@@ -386,7 +386,13 @@ class HindsightMemoryProvider(MemoryProvider):
             return ""
         return f"## Hindsight Memory\n{result}"
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         if self._memory_mode == "tools":
             return
         def _run():

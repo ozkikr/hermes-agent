@@ -188,11 +188,21 @@ class MemoryManager:
                 )
         return "\n\n".join(parts)
 
-    def queue_prefetch_all(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch_all(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         """Queue background prefetch on all providers for the next turn."""
         for provider in self._providers:
             try:
-                provider.queue_prefetch(query, session_id=session_id)
+                provider.queue_prefetch(
+                    query,
+                    session_id=session_id,
+                    assistant_response=assistant_response,
+                )
             except Exception as e:
                 logger.debug(
                     "Memory provider '%s' queue_prefetch failed (non-fatal): %s",

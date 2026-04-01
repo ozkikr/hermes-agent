@@ -344,7 +344,13 @@ class OpenVikingMemoryProvider(MemoryProvider):
             return ""
         return f"## OpenViking Context\n{result}"
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         """Fire a background search to pre-load relevant context."""
         if not self._client or not query:
             return

@@ -539,7 +539,13 @@ class RetainDBMemoryProvider(MemoryProvider):
 
     # ── Background prefetch (fires at turn-end, consumed next turn-start) ──
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         """Fire context + dialectic + agent model prefetches in background."""
         if not self._client:
             return

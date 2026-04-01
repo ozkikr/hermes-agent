@@ -244,7 +244,13 @@ class Mem0MemoryProvider(MemoryProvider):
             return ""
         return f"## Mem0 Memory\n{result}"
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         if self._is_breaker_open():
             return
 

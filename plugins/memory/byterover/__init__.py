@@ -230,7 +230,13 @@ class ByteRoverMemoryProvider(MemoryProvider):
                 return f"## ByteRover Context\n{output}"
         return ""
 
-    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+    def queue_prefetch(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        assistant_response: str = "",
+    ) -> None:
         """No-op: prefetch() now runs synchronously at turn start."""
         pass
 
