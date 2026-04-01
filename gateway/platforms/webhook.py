@@ -178,8 +178,19 @@ class WebhookAdapter(BasePlatformAdapter):
         """
         delivery = self._delivery_info.get(chat_id, {})
         deliver_type = delivery.get("deliver", "log")
+        logger.info("[webhook] send() chat_id=%s deliver_type=%s delivery_keys=%s content_start=%s",
+                     chat_id, deliver_type, list(delivery.keys()), repr(content[:40]))
 
         if deliver_type == "log":
+            logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
+            return SendResult(success=True)
+
+        # For non-log delivery targets, only deliver the final response,
+        # not intermediate tool progress messages. Tool progress messages
+        # are identified by common prefixes (emoji tool indicators).
+        _TOOL_PROGRESS_PREFIXES = ("💻", "🔎", "📖", "🔧", "💬", "┊")
+        is_progress = any(content.lstrip().startswith(p) for p in _TOOL_PROGRESS_PREFIXES)
+        if is_progress:
             logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
             return SendResult(success=True)
 
@@ -190,10 +201,13 @@ class WebhookAdapter(BasePlatformAdapter):
         if self.gateway_runner and deliver_type in (
             "telegram",
             "discord",
+            "whatsapp",
             "slack",
             "signal",
             "sms",
         ):
+            # Clean up delivery info on final delivery to prevent memory leak
+            self._delivery_info.pop(chat_id, None)
             return await self._deliver_cross_platform(
                 deliver_type, content, delivery
             )
