@@ -4828,19 +4828,43 @@ class AIAgent:
         # access for Codex providers.
         try:
             from agent.auxiliary_client import resolve_provider_client
-            # Pass base_url and api_key from fallback config so custom
-            # endpoints (e.g. Ollama Cloud) resolve correctly instead of
-            # falling through to OpenRouter defaults.
-            fb_base_url_hint = (fb.get("base_url") or "").strip() or None
-            fb_api_key_hint = (fb.get("api_key") or "").strip() or None
-            # For Ollama Cloud endpoints, pull OLLAMA_API_KEY from env
-            # when no explicit key is in the fallback config.
-            if fb_base_url_hint and "ollama.com" in fb_base_url_hint.lower() and not fb_api_key_hint:
-                fb_api_key_hint = os.getenv("OLLAMA_API_KEY") or None
-            fb_client, _ = resolve_provider_client(
-                fb_provider, model=fb_model, raw_codex=True,
-                explicit_base_url=fb_base_url_hint,
-                explicit_api_key=fb_api_key_hint)
+
+            resolve_kwargs: Dict[str, Any] = {
+                "model": fb_model,
+                "raw_codex": True,
+            }
+            explicit_base_url = str(fb.get("base_url") or "").strip()
+            if explicit_base_url:
+                resolve_kwargs["explicit_base_url"] = explicit_base_url
+
+            api_key_value = str(fb.get("api_key") or "").strip()
+            explicit_api_key = api_key_value
+            if fb_provider == "custom":
+                from hermes_cli.auth import has_usable_secret
+
+                api_key_env = str(fb.get("api_key_env") or "").strip()
+                if api_key_env:
+                    env_api_key = str(os.getenv(api_key_env, "") or "").strip()
+                    if env_api_key:
+                        explicit_api_key = env_api_key
+                if not explicit_api_key and api_key_value:
+                    # Backward compatibility: some configs put the env var name
+                    # into api_key instead of api_key_env.
+                    env_override = str(os.getenv(api_key_value, "") or "").strip()
+                    if has_usable_secret(env_override):
+                        explicit_api_key = env_override
+                    else:
+                        explicit_api_key = api_key_value
+            if (
+                explicit_base_url
+                and "ollama.com" in explicit_base_url.lower()
+                and not explicit_api_key
+            ):
+                explicit_api_key = str(os.getenv("OLLAMA_API_KEY", "") or "").strip()
+            if explicit_api_key:
+                resolve_kwargs["explicit_api_key"] = explicit_api_key
+
+            fb_client, _ = resolve_provider_client(fb_provider, **resolve_kwargs)
             if fb_client is None:
                 logging.warning(
                     "Fallback to %s failed: provider not configured",

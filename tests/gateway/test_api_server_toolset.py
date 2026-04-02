@@ -79,6 +79,7 @@ class TestApiServerAdapterToolset:
         with patch("gateway.run._resolve_runtime_agent_kwargs") as mock_kwargs, \
              patch("gateway.run._resolve_gateway_model") as mock_model, \
              patch("gateway.run._load_gateway_config") as mock_config, \
+             patch("gateway.run.GatewayRunner._load_fallback_model") as mock_fallback, \
              patch("run_agent.AIAgent") as mock_agent_cls:
 
             mock_kwargs.return_value = {"api_key": "test-key", "base_url": None,
@@ -87,6 +88,7 @@ class TestApiServerAdapterToolset:
             mock_model.return_value = "test/model"
             # No platform_toolsets override — should fall back to hermes-api-server default
             mock_config.return_value = {}
+            mock_fallback.return_value = {"provider": "custom", "model": "gpt-5.4(high)"}
             mock_agent_cls.return_value = MagicMock()
 
             adapter._create_agent()
@@ -97,6 +99,10 @@ class TestApiServerAdapterToolset:
             assert isinstance(toolsets, list)
             assert len(toolsets) > 0
             assert call_kwargs.kwargs.get("platform") == "api_server"
+            assert call_kwargs.kwargs.get("fallback_model") == {
+                "provider": "custom",
+                "model": "gpt-5.4(high)",
+            }
 
     @patch("gateway.platforms.api_server.AIOHTTP_AVAILABLE", True)
     def test_create_agent_respects_config_override(self):

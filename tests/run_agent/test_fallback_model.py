@@ -188,13 +188,53 @@ class TestTryActivateFallback:
             api_key="custom-secret",
             base_url="http://localhost:8080/v1",
         )
-        with patch(
-            "agent.auxiliary_client.resolve_provider_client",
-            return_value=(mock_client, "my-model"),
+        with (
+            patch.dict(os.environ, {"MY_CUSTOM_KEY": "custom-secret"}, clear=False),
+            patch(
+                "agent.auxiliary_client.resolve_provider_client",
+                return_value=(mock_client, "my-model"),
+            ) as resolve_mock,
         ):
             assert agent._try_activate_fallback() is True
             assert agent.client is mock_client
             assert agent.model == "my-model"
+            resolve_mock.assert_called_once_with(
+                "custom",
+                model="my-model",
+                raw_codex=True,
+                explicit_base_url="http://localhost:8080/v1",
+                explicit_api_key="custom-secret",
+            )
+
+    def test_custom_api_key_field_can_reference_env_var(self):
+        """api_key may contain an env var name for backward compatibility."""
+        agent = _make_agent(
+            fallback_model={
+                "provider": "custom",
+                "model": "my-model",
+                "base_url": "http://localhost:8080/v1",
+                "api_key": "MY_CUSTOM_KEY",
+            },
+        )
+        mock_client = _mock_resolve(
+            api_key="custom-secret",
+            base_url="http://localhost:8080/v1",
+        )
+        with (
+            patch.dict(os.environ, {"MY_CUSTOM_KEY": "custom-secret"}, clear=False),
+            patch(
+                "agent.auxiliary_client.resolve_provider_client",
+                return_value=(mock_client, "my-model"),
+            ) as resolve_mock,
+        ):
+            assert agent._try_activate_fallback() is True
+            resolve_mock.assert_called_once_with(
+                "custom",
+                model="my-model",
+                raw_codex=True,
+                explicit_base_url="http://localhost:8080/v1",
+                explicit_api_key="custom-secret",
+            )
 
     def test_prompt_caching_enabled_for_claude_on_openrouter(self):
         agent = _make_agent(
