@@ -625,6 +625,22 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
             }
             if job.get("base_url"):
                 runtime_kwargs["explicit_base_url"] = job.get("base_url")
+            # For custom providers, resolve API key from config (same as
+            # run_agent.py fallback_model and api_server.py paths).
+            req_provider = runtime_kwargs["requested"]
+            if req_provider == "custom":
+                from hermes_cli.auth import has_usable_secret
+                api_key_env = str(_cfg.get("fallback_model", {}).get("api_key_env") or "").strip()
+                if not api_key_env:
+                    # Check custom_providers list for a matching base_url
+                    for cp in (_cfg.get("custom_providers") or []):
+                        if cp.get("base_url") == job.get("base_url"):
+                            api_key_env = str(cp.get("api_key_env") or "").strip()
+                            break
+                if api_key_env:
+                    explicit_key = str(os.getenv(api_key_env, "") or "").strip()
+                    if has_usable_secret(explicit_key):
+                        runtime_kwargs["explicit_api_key"] = explicit_key
             runtime = resolve_runtime_provider(**runtime_kwargs)
         except Exception as exc:
             message = format_runtime_provider_error(exc)
@@ -644,6 +660,14 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
                 "args": list(runtime.get("args") or []),
             },
         )
+
+        # Load fallback model config (same as gateway/run.py and api_server.py)
+        _fallback_model = None
+        try:
+            from gateway.run import GatewayRunner
+            _fallback_model = GatewayRunner._load_fallback_model()
+        except Exception as e:
+            logger.debug("Job '%s': failed to load fallback model: %s", job_id, e)
 
         agent = AIAgent(
             model=turn_route["model"],
@@ -666,6 +690,7 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
             platform="cron",
             session_id=_cron_session_id,
             session_db=_session_db,
+            fallback_model=_fallback_model,
         )
         
         # Run the agent with an *inactivity*-based timeout: the job can run
