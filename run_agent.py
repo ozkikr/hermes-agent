@@ -4921,10 +4921,22 @@ class AIAgent:
             # causing oversized sessions to overflow the fallback.
             if hasattr(self, 'context_compressor') and self.context_compressor:
                 from agent.model_metadata import get_model_context_length
-                fb_context_length = get_model_context_length(
-                    self.model, base_url=self.base_url,
-                    api_key=self.api_key, provider=self.provider,
-                )
+
+                fb_context_length = None
+                raw_fb_context_length = fb.get("context_length")
+                if raw_fb_context_length is not None:
+                    try:
+                        parsed_fb_context_length = int(raw_fb_context_length)
+                        if parsed_fb_context_length > 0:
+                            fb_context_length = parsed_fb_context_length
+                    except (TypeError, ValueError):
+                        pass
+
+                if fb_context_length is None:
+                    fb_context_length = get_model_context_length(
+                        self.model, base_url=self.base_url,
+                        api_key=self.api_key, provider=self.provider,
+                    )
                 self.context_compressor.model = self.model
                 self.context_compressor.base_url = self.base_url
                 self.context_compressor.api_key = self.api_key

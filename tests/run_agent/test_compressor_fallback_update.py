@@ -74,6 +74,31 @@ def test_compressor_updated_on_fallback(mock_ctx_len, mock_resolve):
 
 @patch("agent.auxiliary_client.resolve_provider_client")
 @patch("agent.model_metadata.get_model_context_length", return_value=128_000)
+def test_fallback_context_length_override_wins(mock_ctx_len, mock_resolve):
+    """fallback_model.context_length should override detected model metadata."""
+    agent = _make_agent_with_compressor()
+    agent._fallback_model["context_length"] = 1_000_000
+
+    fb_client = MagicMock()
+    fb_client.base_url = "https://api.openai.com/v1"
+    fb_client.api_key = "sk-fallback"
+    mock_resolve.return_value = (fb_client, None)
+
+    agent._is_direct_openai_url = lambda url: "api.openai.com" in url
+    agent._emit_status = lambda msg: None
+
+    result = agent._try_activate_fallback()
+
+    assert result is True
+    assert agent.context_compressor.context_length == 1_000_000
+    assert agent.context_compressor.threshold_tokens == int(
+        1_000_000 * agent.context_compressor.threshold_percent
+    )
+    mock_ctx_len.assert_not_called()
+
+
+@patch("agent.auxiliary_client.resolve_provider_client")
+@patch("agent.model_metadata.get_model_context_length", return_value=128_000)
 def test_compressor_not_present_does_not_crash(mock_ctx_len, mock_resolve):
     """If the agent has no compressor, fallback should still succeed."""
     agent = _make_agent_with_compressor()
