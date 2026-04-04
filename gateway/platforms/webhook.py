@@ -181,10 +181,6 @@ class WebhookAdapter(BasePlatformAdapter):
         logger.info("[webhook] send() chat_id=%s deliver_type=%s delivery_keys=%s content_start=%s",
                      chat_id, deliver_type, list(delivery.keys()), repr(content[:40]))
 
-        if deliver_type == "log":
-            logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
-            return SendResult(success=True)
-
         # For non-log delivery targets, only deliver the final response,
         # not intermediate tool progress messages. Tool progress messages
         # are identified by common prefixes (emoji tool indicators).
@@ -194,7 +190,13 @@ class WebhookAdapter(BasePlatformAdapter):
             logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
             return SendResult(success=True)
 
+        if deliver_type == "log":
+            self._delivery_info.pop(chat_id, None)
+            logger.info("[webhook] Response for %s: %s", chat_id, content[:200])
+            return SendResult(success=True)
+
         if deliver_type == "github_comment":
+            self._delivery_info.pop(chat_id, None)
             return await self._deliver_github_comment(content, delivery)
 
         # Cross-platform delivery (telegram, discord, etc.)

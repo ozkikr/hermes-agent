@@ -641,6 +641,21 @@ class TestDeliveryCleanup:
         assert "webhook:test:new" in adapter._delivery_info
         assert "webhook:test:new" in adapter._delivery_info_created
 
+    @pytest.mark.asyncio
+    async def test_progress_message_keeps_cross_platform_delivery_info(self):
+        """Tool progress logs should not consume delivery info before final send."""
+        adapter = _make_adapter()
+        chat_id = "webhook:test:d-progress"
+        adapter._delivery_info[chat_id] = {
+            "deliver": "telegram",
+            "deliver_extra": {"chat_id": "123"},
+            "payload": {"x": 1},
+        }
+
+        result = await adapter.send(chat_id, "💻 Running terminal command...")
+        assert result.success is True
+        assert chat_id in adapter._delivery_info
+
 
 # ===================================================================
 # check_webhook_requirements
