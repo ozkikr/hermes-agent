@@ -423,16 +423,36 @@ class APIServerAdapter(BasePlatformAdapter):
             _resolve_gateway_model,
             _load_gateway_config,
         )
+        from hermes_cli.runtime_provider import resolve_runtime_with_fallback
         from hermes_cli.tools_config import _get_platform_tools
 
-        runtime_kwargs = _resolve_runtime_agent_kwargs()
         model = _resolve_gateway_model()
+        fallback_model = GatewayRunner._load_fallback_model()
+        try:
+            runtime_kwargs = _resolve_runtime_agent_kwargs()
+        except Exception:
+            resolved_runtime = resolve_runtime_with_fallback(
+                requested=os.getenv("HERMES_INFERENCE_PROVIDER"),
+                fallback_chain=fallback_model,
+            )
+            runtime = resolved_runtime["runtime"]
+            runtime_kwargs = {
+                "api_key": runtime.get("api_key"),
+                "base_url": runtime.get("base_url"),
+                "provider": runtime.get("provider"),
+                "api_mode": runtime.get("api_mode"),
+                "command": runtime.get("command"),
+                "args": list(runtime.get("args") or []),
+                "credential_pool": runtime.get("credential_pool"),
+            }
+            if resolved_runtime.get("used_fallback"):
+                model = resolved_runtime.get("fallback_model") or model
+                fallback_model = resolved_runtime.get("remaining_fallbacks", fallback_model)
 
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
 
         max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
-        fallback_model = GatewayRunner._load_fallback_model()
 
         agent = AIAgent(
             model=model,

@@ -6604,15 +6604,50 @@ class GatewayRunner:
 
             model = _resolve_gateway_model(user_config)
 
+            agent_fallback_model = self._fallback_model
             try:
                 runtime_kwargs = _resolve_runtime_agent_kwargs()
             except Exception as exc:
-                return {
-                    "final_response": f"⚠️ Provider authentication failed: {exc}",
-                    "messages": [],
-                    "api_calls": 0,
-                    "tools": [],
-                }
+                try:
+                    from hermes_cli.runtime_provider import (
+                        resolve_runtime_with_fallback,
+                        format_runtime_provider_error,
+                    )
+
+                    resolved_runtime = resolve_runtime_with_fallback(
+                        requested=os.getenv("HERMES_INFERENCE_PROVIDER"),
+                        fallback_chain=self._fallback_model,
+                    )
+                    if not resolved_runtime.get("used_fallback"):
+                        raise exc
+                    runtime = resolved_runtime["runtime"]
+                    runtime_kwargs = {
+                        "api_key": runtime.get("api_key"),
+                        "base_url": runtime.get("base_url"),
+                        "provider": runtime.get("provider"),
+                        "api_mode": runtime.get("api_mode"),
+                        "command": runtime.get("command"),
+                        "args": list(runtime.get("args") or []),
+                        "credential_pool": runtime.get("credential_pool"),
+                    }
+                    agent_fallback_model = resolved_runtime.get("remaining_fallbacks", self._fallback_model)
+                    primary_error = format_runtime_provider_error(
+                        resolved_runtime.get("primary_error")
+                    )
+                    model = resolved_runtime.get("fallback_model") or model
+                    logger.warning(
+                        "Primary provider authentication failed (%s); using fallback model %s via %s",
+                        primary_error,
+                        model,
+                        runtime.get("provider"),
+                    )
+                except Exception:
+                    return {
+                        "final_response": f"⚠️ Provider authentication failed: {exc}",
+                        "messages": [],
+                        "api_calls": 0,
+                        "tools": [],
+                    }
 
             pr = self._provider_routing
             reasoning_config = self._load_reasoning_config()
@@ -6689,7 +6724,7 @@ class GatewayRunner:
                     platform=platform_key,
                     user_id=source.user_id,
                     session_db=self._session_db,
-                    fallback_model=self._fallback_model,
+                    fallback_model=agent_fallback_model,
                 )
                 if _cache_lock and _cache is not None:
                     with _cache_lock:

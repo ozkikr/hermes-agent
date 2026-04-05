@@ -200,6 +200,38 @@ def test_runtime_resolution_rebuilds_agent_on_routing_change(monkeypatch):
     assert shell.api_mode == "codex_responses"
 
 
+def test_runtime_resolution_uses_fallback_when_primary_auth_fails(monkeypatch):
+    cli = _import_cli()
+
+    monkeypatch.setattr(
+        "hermes_cli.runtime_provider.resolve_runtime_with_fallback",
+        lambda **kwargs: {
+            "runtime": {
+                "provider": "openrouter",
+                "api_mode": "chat_completions",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "fallback-key",
+                "source": "env/config",
+            },
+            "used_fallback": True,
+            "fallback_model": "gpt-5.1",
+            "remaining_fallbacks": [],
+            "primary_error": RuntimeError("no anthropic credentials"),
+        },
+    )
+    monkeypatch.setattr("hermes_cli.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
+
+    shell = cli.HermesCLI(model="claude-sonnet-4-6", compact=True, max_turns=1)
+    shell.requested_provider = "anthropic"
+    shell._fallback_model = [{"provider": "openrouter", "model": "gpt-5.1"}]
+
+    assert shell._ensure_runtime_credentials() is True
+    assert shell.provider == "openrouter"
+    assert shell.api_mode == "chat_completions"
+    assert shell.model == "gpt-5.1"
+    assert shell._active_fallback_model == []
+
+
 def test_cli_turn_routing_uses_primary_when_disabled(monkeypatch):
     cli = _import_cli()
     shell = cli.HermesCLI(model="gpt-5", compact=True, max_turns=1)

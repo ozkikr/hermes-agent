@@ -93,6 +93,76 @@ def test_resolve_runtime_provider_anthropic_explicit_override_skips_pool(monkeyp
     assert resolved.get("credential_pool") is None
 
 
+def test_resolve_runtime_with_fallback_uses_first_resolvable_fallback(monkeypatch):
+    calls = []
+
+    def _resolve_runtime_provider(*, requested=None, explicit_api_key=None, explicit_base_url=None):
+        calls.append((requested, explicit_api_key, explicit_base_url))
+        if requested == "anthropic":
+            raise RuntimeError("no anthropic credentials")
+        if requested == "openrouter":
+            return {
+                "provider": "openrouter",
+                "api_mode": "chat_completions",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "or-key",
+                "source": "env/config",
+            }
+        raise AssertionError(f"unexpected provider: {requested}")
+
+    monkeypatch.setattr(rp, "resolve_runtime_provider", _resolve_runtime_provider)
+
+    resolved = rp.resolve_runtime_with_fallback(
+        requested="anthropic",
+        fallback_chain=[{"provider": "openrouter", "model": "gpt-5.1"}],
+    )
+
+    assert resolved["used_fallback"] is True
+    assert resolved["fallback_model"] == "gpt-5.1"
+    assert resolved["remaining_fallbacks"] == []
+    assert resolved["runtime"]["provider"] == "openrouter"
+    assert calls == [
+        ("anthropic", None, None),
+        ("openrouter", None, None),
+    ]
+
+
+def test_resolve_runtime_with_fallback_honors_custom_api_key_env(monkeypatch):
+    monkeypatch.setenv("FB_CUSTOM_KEY", "custom-secret")
+
+    def _resolve_runtime_provider(*, requested=None, explicit_api_key=None, explicit_base_url=None):
+        if requested == "anthropic":
+            raise RuntimeError("no anthropic credentials")
+        assert requested == "custom"
+        assert explicit_api_key == "custom-secret"
+        assert explicit_base_url == "https://proxy.example.com/anthropic"
+        return {
+            "provider": "custom",
+            "api_mode": "anthropic_messages",
+            "base_url": explicit_base_url,
+            "api_key": explicit_api_key,
+            "source": "explicit",
+        }
+
+    monkeypatch.setattr(rp, "resolve_runtime_provider", _resolve_runtime_provider)
+
+    resolved = rp.resolve_runtime_with_fallback(
+        requested="anthropic",
+        fallback_chain=[
+            {
+                "provider": "custom",
+                "model": "claude-sonnet-4-6",
+                "base_url": "https://proxy.example.com/anthropic",
+                "api_key_env": "FB_CUSTOM_KEY",
+            }
+        ],
+    )
+
+    assert resolved["used_fallback"] is True
+    assert resolved["fallback_model"] == "claude-sonnet-4-6"
+    assert resolved["runtime"]["api_mode"] == "anthropic_messages"
+
+
 def test_resolve_runtime_provider_falls_back_when_pool_empty(monkeypatch):
     class _Pool:
         def has_credentials(self):

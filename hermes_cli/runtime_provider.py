@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +301,47 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
         return result
 
     return None
+
+
+def _normalize_fallback_chain(fallback_chain: Any) -> List[Dict[str, Any]]:
+    """Normalize fallback config to a list of valid {provider, model, ...} dicts."""
+    if isinstance(fallback_chain, dict):
+        entries = [fallback_chain]
+    elif isinstance(fallback_chain, list):
+        entries = fallback_chain
+    else:
+        return []
+
+    normalized: List[Dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        provider = str(entry.get("provider") or "").strip()
+        model = str(entry.get("model") or "").strip()
+        if not provider or not model:
+            continue
+        normalized.append(dict(entry))
+    return normalized
+
+
+def _fallback_entry_runtime_overrides(entry: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    """Resolve explicit runtime overrides from a fallback chain entry."""
+    explicit_base_url = str(entry.get("base_url") or "").strip().rstrip("/") or None
+
+    explicit_api_key: Optional[str] = None
+    api_key_env = str(entry.get("api_key_env") or "").strip()
+    api_key_value = str(entry.get("api_key") or "").strip()
+    if api_key_env:
+        explicit_api_key = str(os.getenv(api_key_env, "") or "").strip() or None
+    elif api_key_value:
+        # Backward compatibility: some configs store the env-var name in api_key.
+        env_override = str(os.getenv(api_key_value, "") or "").strip()
+        if has_usable_secret(env_override):
+            explicit_api_key = env_override
+        else:
+            explicit_api_key = api_key_value
+
+    return explicit_api_key, explicit_base_url
 
 
 def _resolve_named_custom_runtime(
@@ -778,6 +819,64 @@ def resolve_runtime_provider(
     )
     runtime["requested_provider"] = requested_provider
     return runtime
+
+
+def resolve_runtime_with_fallback(
+    *,
+    requested: Optional[str] = None,
+    fallback_chain: Any = None,
+    explicit_api_key: Optional[str] = None,
+    explicit_base_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Resolve runtime credentials, pre-activating a fallback if primary auth fails.
+
+    This is for entrypoints that need a runtime before an AIAgent exists.
+    Once an agent is running, in-turn provider fallback still flows through
+    AIAgent._try_activate_fallback().
+    """
+    normalized_chain = _normalize_fallback_chain(fallback_chain)
+
+    try:
+        runtime = resolve_runtime_provider(
+            requested=requested,
+            explicit_api_key=explicit_api_key,
+            explicit_base_url=explicit_base_url,
+        )
+        return {
+            "runtime": runtime,
+            "used_fallback": False,
+            "fallback_model": None,
+            "activated_fallback": None,
+            "remaining_fallbacks": normalized_chain,
+            "primary_error": None,
+        }
+    except Exception as primary_error:
+        for idx, entry in enumerate(normalized_chain):
+            fb_provider = str(entry.get("provider") or "").strip()
+            fb_model = str(entry.get("model") or "").strip()
+            if not fb_provider or not fb_model:
+                continue
+
+            fb_api_key, fb_base_url = _fallback_entry_runtime_overrides(entry)
+            try:
+                runtime = resolve_runtime_provider(
+                    requested=fb_provider,
+                    explicit_api_key=fb_api_key,
+                    explicit_base_url=fb_base_url,
+                )
+            except Exception:
+                continue
+
+            return {
+                "runtime": runtime,
+                "used_fallback": True,
+                "fallback_model": fb_model,
+                "activated_fallback": entry,
+                "remaining_fallbacks": normalized_chain[idx + 1 :],
+                "primary_error": primary_error,
+            }
+
+        raise primary_error
 
 
 def format_runtime_provider_error(error: Exception) -> str:

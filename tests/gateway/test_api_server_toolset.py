@@ -76,7 +76,8 @@ class TestApiServerAdapterToolset:
 
         adapter = APIServerAdapter(PlatformConfig())
 
-        with patch("gateway.run._resolve_runtime_agent_kwargs") as mock_kwargs, \
+        with patch("hermes_cli.runtime_provider.resolve_runtime_with_fallback") as mock_runtime, \
+             patch("gateway.run._resolve_runtime_agent_kwargs") as mock_kwargs, \
              patch("gateway.run._resolve_gateway_model") as mock_model, \
              patch("gateway.run._load_gateway_config") as mock_config, \
              patch("gateway.run.GatewayRunner._load_fallback_model") as mock_fallback, \
@@ -85,6 +86,13 @@ class TestApiServerAdapterToolset:
             mock_kwargs.return_value = {"api_key": "test-key", "base_url": None,
                                         "provider": None, "api_mode": None,
                                         "command": None, "args": []}
+            mock_runtime.return_value = {
+                "runtime": {"api_key": "test-key", "base_url": None,
+                            "provider": None, "api_mode": None,
+                            "command": None, "args": []},
+                "used_fallback": False,
+                "remaining_fallbacks": {"provider": "custom", "model": "gpt-5.4(high)"},
+            }
             mock_model.return_value = "test/model"
             # No platform_toolsets override — should fall back to hermes-api-server default
             mock_config.return_value = {}
@@ -112,7 +120,8 @@ class TestApiServerAdapterToolset:
 
         adapter = APIServerAdapter(PlatformConfig())
 
-        with patch("gateway.run._resolve_runtime_agent_kwargs") as mock_kwargs, \
+        with patch("hermes_cli.runtime_provider.resolve_runtime_with_fallback") as mock_runtime, \
+             patch("gateway.run._resolve_runtime_agent_kwargs") as mock_kwargs, \
              patch("gateway.run._resolve_gateway_model") as mock_model, \
              patch("gateway.run._load_gateway_config") as mock_config, \
              patch("run_agent.AIAgent") as mock_agent_cls:
@@ -120,6 +129,13 @@ class TestApiServerAdapterToolset:
             mock_kwargs.return_value = {"api_key": "test-key", "base_url": None,
                                         "provider": None, "api_mode": None,
                                         "command": None, "args": []}
+            mock_runtime.return_value = {
+                "runtime": {"api_key": "test-key", "base_url": None,
+                            "provider": None, "api_mode": None,
+                            "command": None, "args": []},
+                "used_fallback": False,
+                "remaining_fallbacks": [],
+            }
             mock_model.return_value = "test/model"
             # User overrides with just web and terminal
             mock_config.return_value = {

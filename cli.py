@@ -1495,6 +1495,7 @@ class HermesCLI:
         if isinstance(fb, dict):
             fb = [fb] if fb.get("provider") and fb.get("model") else []
         self._fallback_model = fb
+        self._active_fallback_model = fb
 
         # Optional cheap-vs-strong routing for simple turns
         self._smart_model_routing = CLI_CONFIG.get("smart_model_routing", {}) or {}
@@ -2268,13 +2269,14 @@ class HermesCLI:
         Returns True if credentials are ready, False on auth failure.
         """
         from hermes_cli.runtime_provider import (
-            resolve_runtime_provider,
+            resolve_runtime_with_fallback,
             format_runtime_provider_error,
         )
 
         try:
-            runtime = resolve_runtime_provider(
+            resolved = resolve_runtime_with_fallback(
                 requested=self.requested_provider,
+                fallback_chain=self._fallback_model,
                 explicit_api_key=self._explicit_api_key,
                 explicit_base_url=self._explicit_base_url,
             )
@@ -2282,6 +2284,19 @@ class HermesCLI:
             message = format_runtime_provider_error(exc)
             ChatConsole().print(f"[bold red]{message}[/]")
             return False
+
+        runtime = resolved["runtime"]
+        self._active_fallback_model = resolved.get("remaining_fallbacks", self._fallback_model)
+        if resolved.get("used_fallback"):
+            primary_error = format_runtime_provider_error(resolved.get("primary_error"))
+            fallback_model = resolved.get("fallback_model") or self.model
+            self.console.print(
+                "[bold yellow]"
+                f"Primary provider authentication failed ({primary_error}). "
+                f"Using fallback model {fallback_model} via {runtime.get('provider')}."
+                "[/]"
+            )
+            self.model = fallback_model
 
         api_key = runtime.get("api_key")
         base_url = runtime.get("base_url")
@@ -2459,7 +2474,7 @@ class HermesCLI:
                 clarify_callback=self._clarify_callback,
                 reasoning_callback=self._current_reasoning_callback(),
 
-                fallback_model=self._fallback_model,
+                fallback_model=self._active_fallback_model,
                 thinking_callback=self._on_thinking,
                 checkpoints_enabled=self.checkpoints_enabled,
                 checkpoint_max_snapshots=self.checkpoint_max_snapshots,
@@ -4834,7 +4849,7 @@ class HermesCLI:
                     provider_sort=self._provider_sort,
                     provider_require_parameters=self._provider_require_params,
                     provider_data_collection=self._provider_data_collection,
-                    fallback_model=self._fallback_model,
+                    fallback_model=self._active_fallback_model,
                 )
                 # Silence raw spinner; route thinking through TUI widget when no foreground agent is active.
                 bg_agent._print_fn = lambda *_a, **_kw: None
@@ -4969,7 +4984,7 @@ class HermesCLI:
                     provider_sort=self._provider_sort,
                     provider_require_parameters=self._provider_require_params,
                     provider_data_collection=self._provider_data_collection,
-                    fallback_model=self._fallback_model,
+                    fallback_model=self._active_fallback_model,
                     session_db=None,
                     skip_memory=True,
                     skip_context_files=True,
