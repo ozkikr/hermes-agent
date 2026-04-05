@@ -1,4 +1,7 @@
+import pytest
+
 from hermes_cli import runtime_provider as rp
+from hermes_cli.auth import AuthError
 
 
 def test_resolve_runtime_provider_uses_credential_pool(monkeypatch):
@@ -91,6 +94,67 @@ def test_resolve_runtime_provider_anthropic_explicit_override_skips_pool(monkeyp
     assert resolved["base_url"] == "https://proxy.example.com/anthropic"
     assert resolved["source"] == "explicit"
     assert resolved.get("credential_pool") is None
+
+
+def test_resolve_runtime_provider_anthropic_respects_model_api_key_env(monkeypatch):
+    def _unexpected_pool(provider):
+        raise AssertionError(f"load_pool should not be called for {provider}")
+
+    def _unexpected_anthropic_token():
+        raise AssertionError("resolve_anthropic_token should not be called")
+
+    monkeypatch.setenv("GATEWAY_ANTHROPIC_KEY", "gateway-secret")
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
+    monkeypatch.setattr(
+        rp,
+        "_get_model_config",
+        lambda: {
+            "provider": "anthropic",
+            "base_url": "http://localhost:8318",
+            "api_key_env": "GATEWAY_ANTHROPIC_KEY",
+        },
+    )
+    monkeypatch.setattr(rp, "load_pool", _unexpected_pool)
+    monkeypatch.setattr(
+        "agent.anthropic_adapter.resolve_anthropic_token",
+        _unexpected_anthropic_token,
+    )
+
+    resolved = rp.resolve_runtime_provider(requested="anthropic")
+
+    assert resolved["provider"] == "anthropic"
+    assert resolved["api_mode"] == "anthropic_messages"
+    assert resolved["base_url"] == "http://localhost:8318"
+    assert resolved["api_key"] == "gateway-secret"
+    assert resolved["source"] == "explicit"
+
+
+def test_resolve_runtime_provider_anthropic_missing_model_api_key_env_fails(monkeypatch):
+    def _unexpected_pool(provider):
+        raise AssertionError(f"load_pool should not be called for {provider}")
+
+    def _unexpected_anthropic_token():
+        raise AssertionError("resolve_anthropic_token should not be called")
+
+    monkeypatch.delenv("GATEWAY_ANTHROPIC_KEY", raising=False)
+    monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
+    monkeypatch.setattr(
+        rp,
+        "_get_model_config",
+        lambda: {
+            "provider": "anthropic",
+            "base_url": "http://localhost:8318",
+            "api_key_env": "GATEWAY_ANTHROPIC_KEY",
+        },
+    )
+    monkeypatch.setattr(rp, "load_pool", _unexpected_pool)
+    monkeypatch.setattr(
+        "agent.anthropic_adapter.resolve_anthropic_token",
+        _unexpected_anthropic_token,
+    )
+
+    with pytest.raises(AuthError, match="model.api_key_env"):
+        rp.resolve_runtime_provider(requested="anthropic")
 
 
 def test_resolve_runtime_with_fallback_uses_first_resolvable_fallback(monkeypatch):

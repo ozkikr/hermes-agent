@@ -31,6 +31,47 @@ def _normalize_custom_provider_name(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
 
 
+def _resolve_model_config_api_key_override(
+    model_cfg: Dict[str, Any],
+    *,
+    provider: str,
+) -> Optional[str]:
+    """Resolve a per-model api_key_env/api_key override from config.
+
+    For anthropic-compatible private gateways, users may keep
+    ``provider: anthropic`` for Messages API semantics while routing through
+    a custom base_url and separate gateway key. In that case, a per-model
+    key override must win over Anthropic's native token resolution.
+    """
+    api_key_env = str(model_cfg.get("api_key_env") or "").strip()
+    if api_key_env:
+        env_value = str(os.getenv(api_key_env, "") or "").strip()
+        if has_usable_secret(env_value):
+            return env_value
+        raise AuthError(
+            f"Configured model.api_key_env '{api_key_env}' did not resolve to a usable secret.",
+            provider=provider,
+            code="missing_configured_api_key",
+        )
+
+    for key_name in ("api_key", "api"):
+        raw_value = str(model_cfg.get(key_name) or "").strip()
+        if not raw_value:
+            continue
+        env_override = str(os.getenv(raw_value, "") or "").strip()
+        if has_usable_secret(env_override):
+            return env_override
+        if has_usable_secret(raw_value):
+            return raw_value
+        raise AuthError(
+            f"Configured model.{key_name} did not contain a usable secret.",
+            provider=provider,
+            code="invalid_configured_api_key",
+        )
+
+    return None
+
+
 def _detect_api_mode_for_url(base_url: str) -> Optional[str]:
     """Auto-detect api_mode from the resolved base URL.
 
@@ -638,11 +679,17 @@ def resolve_runtime_provider(
         explicit_base_url=explicit_base_url,
     )
     model_cfg = _get_model_config()
+    config_api_key_override = None
+    if provider == "anthropic" and not explicit_api_key:
+        config_api_key_override = _resolve_model_config_api_key_override(
+            model_cfg,
+            provider=provider,
+        )
     explicit_runtime = _resolve_explicit_runtime(
         provider=provider,
         requested_provider=requested_provider,
         model_cfg=model_cfg,
-        explicit_api_key=explicit_api_key,
+        explicit_api_key=explicit_api_key or config_api_key_override,
         explicit_base_url=explicit_base_url,
     )
     if explicit_runtime:
