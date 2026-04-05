@@ -444,6 +444,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "command": runtime.get("command"),
                 "args": list(runtime.get("args") or []),
                 "credential_pool": runtime.get("credential_pool"),
+                "anthropic_refresh_enabled": runtime.get("anthropic_refresh_enabled", True),
             }
             if resolved_runtime.get("used_fallback"):
                 model = resolved_runtime.get("fallback_model") or model

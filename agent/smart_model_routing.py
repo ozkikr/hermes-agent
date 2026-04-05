@@ -124,6 +124,7 @@ def resolve_turn_route(user_message: str, routing_config: Optional[Dict[str, Any
                 "command": primary.get("command"),
                 "args": list(primary.get("args") or []),
                 "credential_pool": primary.get("credential_pool"),
+                "anthropic_refresh_enabled": primary.get("anthropic_refresh_enabled", True),
             },
             "label": None,
             "signature": (
@@ -131,6 +132,7 @@ def resolve_turn_route(user_message: str, routing_config: Optional[Dict[str, Any
                 primary.get("provider"),
                 primary.get("base_url"),
                 primary.get("api_mode"),
+                bool(primary.get("anthropic_refresh_enabled", True)),
                 primary.get("command"),
                 tuple(primary.get("args") or ()),
             ),
@@ -160,6 +162,7 @@ def resolve_turn_route(user_message: str, routing_config: Optional[Dict[str, Any
                 "command": primary.get("command"),
                 "args": list(primary.get("args") or []),
                 "credential_pool": primary.get("credential_pool"),
+                "anthropic_refresh_enabled": primary.get("anthropic_refresh_enabled", True),
             },
             "label": None,
             "signature": (
@@ -167,6 +170,7 @@ def resolve_turn_route(user_message: str, routing_config: Optional[Dict[str, Any
                 primary.get("provider"),
                 primary.get("base_url"),
                 primary.get("api_mode"),
+                bool(primary.get("anthropic_refresh_enabled", True)),
                 primary.get("command"),
                 tuple(primary.get("args") or ()),
             ),
@@ -181,6 +185,7 @@ def resolve_turn_route(user_message: str, routing_config: Optional[Dict[str, Any
             "api_mode": runtime.get("api_mode"),
             "command": runtime.get("command"),
             "args": list(runtime.get("args") or []),
+            "anthropic_refresh_enabled": runtime.get("anthropic_refresh_enabled", True),
         },
         "label": f"smart route → {route.get('model')} ({runtime.get('provider')})",
         "signature": (
@@ -188,6 +193,7 @@ def resolve_turn_route(user_message: str, routing_config: Optional[Dict[str, Any
             runtime.get("provider"),
             runtime.get("base_url"),
             runtime.get("api_mode"),
+            bool(runtime.get("anthropic_refresh_enabled", True)),
             runtime.get("command"),
             tuple(runtime.get("args") or ()),
         ),

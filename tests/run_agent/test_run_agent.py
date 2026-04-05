@@ -1679,6 +1679,26 @@ class TestRunConversation:
         assert result["completed"] is True
         assert result["final_response"] == "Recovered after remint"
 
+    def test_client_error_body_string_does_not_crash(self, agent):
+        self._setup_agent(agent)
+
+        class _BadRequestError(RuntimeError):
+            def __init__(self):
+                super().__init__("Error code: 400 - gateway rejected request")
+                self.status_code = 400
+                self.body = {"error": "gateway rejected request"}
+
+        with (
+            patch.object(agent, "_persist_session"),
+            patch.object(agent, "_save_trajectory"),
+            patch.object(agent, "_cleanup_task_resources"),
+            patch.object(agent, "_interruptible_api_call", side_effect=_BadRequestError()),
+        ):
+            result = agent.run_conversation("hello")
+
+        assert result["completed"] is False
+        assert "400" in str(result.get("error", ""))
+
     def test_context_compression_triggered(self, agent):
         """When compressor says should_compress, compression runs."""
         self._setup_agent(agent)
@@ -2842,6 +2862,26 @@ class TestAnthropicCredentialRefresh:
 
         old_client.close.assert_not_called()
         rebuild.assert_not_called()
+
+    def test_try_refresh_anthropic_client_credentials_skips_when_refresh_disabled(self):
+        with (
+            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),
+        ):
+            agent = AIAgent(
+                api_key="gateway-key-not-anthropic",
+                api_mode="anthropic_messages",
+                provider="anthropic",
+                base_url="http://localhost:8318",
+                anthropic_refresh_enabled=False,
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+            )
+
+        with patch("agent.anthropic_adapter.resolve_anthropic_token", side_effect=AssertionError("should not refresh")):
+            assert agent._try_refresh_anthropic_client_credentials() is False
 
     def test_anthropic_messages_create_preflights_refresh(self):
         with (

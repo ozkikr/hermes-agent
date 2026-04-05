@@ -543,6 +543,7 @@ def _resolve_explicit_runtime(
             cfg_base_url = str(model_cfg.get("base_url") or "").strip().rstrip("/")
         base_url = explicit_base_url or cfg_base_url or "https://api.anthropic.com"
         api_key = explicit_api_key
+        refresh_enabled = not bool(explicit_api_key)
         if not api_key:
             from agent.anthropic_adapter import resolve_anthropic_token
 
@@ -557,6 +558,7 @@ def _resolve_explicit_runtime(
             "api_mode": "anthropic_messages",
             "base_url": base_url,
             "api_key": api_key,
+            "anthropic_refresh_enabled": refresh_enabled,
             "source": "explicit",
             "requested_provider": requested_provider,
         }
@@ -814,6 +816,7 @@ def resolve_runtime_provider(
             "api_mode": "anthropic_messages",
             "base_url": base_url,
             "api_key": token,
+            "anthropic_refresh_enabled": True,
             "source": "env",
             "requested_provider": requested_provider,
         }

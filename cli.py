@@ -1417,6 +1417,7 @@ class HermesCLI:
         self.api_mode = "chat_completions"
         self.acp_command: Optional[str] = None
         self.acp_args: list[str] = []
+        self._anthropic_refresh_enabled = True
         self.base_url = (
             base_url
             or CLI_CONFIG["model"].get("base_url", "")
@@ -2305,6 +2306,7 @@ class HermesCLI:
         resolved_acp_command = runtime.get("command")
         resolved_acp_args = list(runtime.get("args") or [])
         resolved_credential_pool = runtime.get("credential_pool")
+        resolved_anthropic_refresh_enabled = runtime.get("anthropic_refresh_enabled", True)
         if not isinstance(api_key, str) or not api_key:
             # Custom / local endpoints (llama.cpp, ollama, vLLM, etc.) often
             # don't require authentication.  When a base_url IS configured but
@@ -2328,7 +2330,11 @@ class HermesCLI:
                   "Check your provider config or run: hermes setup")
             return False
 
-        credentials_changed = api_key != self.api_key or base_url != self.base_url
+        credentials_changed = (
+            api_key != self.api_key
+            or base_url != self.base_url
+            or resolved_anthropic_refresh_enabled != getattr(self, "_anthropic_refresh_enabled", True)
+        )
         routing_changed = (
             resolved_provider != self.provider
             or resolved_api_mode != self.api_mode
@@ -2340,6 +2346,7 @@ class HermesCLI:
         self.acp_command = resolved_acp_command
         self.acp_args = resolved_acp_args
         self._credential_pool = resolved_credential_pool
+        self._anthropic_refresh_enabled = resolved_anthropic_refresh_enabled
         self._provider_source = runtime.get("source")
         self.api_key = api_key
         self.base_url = base_url
@@ -2372,6 +2379,7 @@ class HermesCLI:
                 "command": self.acp_command,
                 "args": list(self.acp_args or []),
                 "credential_pool": getattr(self, "_credential_pool", None),
+                "anthropic_refresh_enabled": getattr(self, "_anthropic_refresh_enabled", True),
             },
         )
 
@@ -2455,6 +2463,7 @@ class HermesCLI:
                 acp_command=runtime.get("command"),
                 acp_args=runtime.get("args"),
                 credential_pool=runtime.get("credential_pool"),
+                anthropic_refresh_enabled=runtime.get("anthropic_refresh_enabled", True),
                 max_iterations=self.max_turns,
                 enabled_toolsets=self.enabled_toolsets,
                 verbose_logging=self.verbose,
@@ -4850,6 +4859,7 @@ class HermesCLI:
                     provider_require_parameters=self._provider_require_params,
                     provider_data_collection=self._provider_data_collection,
                     fallback_model=self._active_fallback_model,
+                    anthropic_refresh_enabled=turn_route["runtime"].get("anthropic_refresh_enabled", True),
                 )
                 # Silence raw spinner; route thinking through TUI widget when no foreground agent is active.
                 bg_agent._print_fn = lambda *_a, **_kw: None
@@ -4985,6 +4995,7 @@ class HermesCLI:
                     provider_require_parameters=self._provider_require_params,
                     provider_data_collection=self._provider_data_collection,
                     fallback_model=self._active_fallback_model,
+                    anthropic_refresh_enabled=turn_route["runtime"].get("anthropic_refresh_enabled", True),
                     session_db=None,
                     skip_memory=True,
                     skip_context_files=True,

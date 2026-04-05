@@ -127,6 +127,7 @@ def test_resolve_runtime_provider_anthropic_respects_model_api_key_env(monkeypat
     assert resolved["base_url"] == "http://localhost:8318"
     assert resolved["api_key"] == "gateway-secret"
     assert resolved["source"] == "explicit"
+    assert resolved["anthropic_refresh_enabled"] is False
 
 
 def test_resolve_runtime_provider_anthropic_missing_model_api_key_env_fails(monkeypatch):

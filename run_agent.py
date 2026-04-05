@@ -480,6 +480,7 @@ class AIAgent:
         iteration_budget: "IterationBudget" = None,
         fallback_model: Dict[str, Any] = None,
         credential_pool=None,
+        anthropic_refresh_enabled: bool = True,
         checkpoints_enabled: bool = False,
         checkpoint_max_snapshots: int = 50,
         pass_session_id: bool = False,
@@ -712,6 +713,7 @@ class AIAgent:
         # access for Codex Responses API streaming.
         self._anthropic_client = None
         self._is_anthropic_oauth = False
+        self._anthropic_refresh_enabled = anthropic_refresh_enabled
 
         if self.api_mode == "anthropic_messages":
             from agent.anthropic_adapter import build_anthropic_client, resolve_anthropic_token
@@ -1221,6 +1223,7 @@ class AIAgent:
                 "anthropic_api_key": self._anthropic_api_key,
                 "anthropic_base_url": self._anthropic_base_url,
                 "is_anthropic_oauth": self._is_anthropic_oauth,
+                "anthropic_refresh_enabled": self._anthropic_refresh_enabled,
             })
 
     def reset_session_state(self):
@@ -4032,6 +4035,8 @@ class AIAgent:
     def _try_refresh_anthropic_client_credentials(self) -> bool:
         if self.api_mode != "anthropic_messages" or not hasattr(self, "_anthropic_api_key"):
             return False
+        if not getattr(self, "_anthropic_refresh_enabled", True):
+            return False
         # Only refresh credentials for the native Anthropic provider.
         # Other anthropic_messages providers (MiniMax, Alibaba, etc.) use their own keys.
         if self.provider != "anthropic":
@@ -4897,6 +4902,7 @@ class AIAgent:
                 self._anthropic_base_url = getattr(fb_client, "base_url", None)
                 self._anthropic_client = build_anthropic_client(effective_key, self._anthropic_base_url)
                 self._is_anthropic_oauth = _is_oauth_token(effective_key)
+                self._anthropic_refresh_enabled = not bool(fb.get("api_key_env") or fb.get("api_key"))
                 self.client = None
                 self._client_kwargs = {}
             else:
@@ -4995,6 +5001,7 @@ class AIAgent:
                     rt["anthropic_api_key"], rt["anthropic_base_url"],
                 )
                 self._is_anthropic_oauth = rt["is_anthropic_oauth"]
+                self._anthropic_refresh_enabled = rt["anthropic_refresh_enabled"]
                 self.client = None
             else:
                 self.client = self._create_openai_client(
@@ -5089,6 +5096,7 @@ class AIAgent:
                     rt["anthropic_api_key"], rt["anthropic_base_url"],
                 )
                 self._is_anthropic_oauth = rt["is_anthropic_oauth"]
+                self._anthropic_refresh_enabled = rt["anthropic_refresh_enabled"]
                 self.client = None
             else:
                 self.client = self._create_openai_client(
@@ -8271,7 +8279,13 @@ class AIAgent:
                     # Real invalid_request_error responses include a descriptive message;
                     # transient ones contain only "Error" or are empty. (ref: issue #1608)
                     _err_body = getattr(api_error, "body", None) or {}
-                    _err_message = (_err_body.get("error", {}).get("message", "") if isinstance(_err_body, dict) else "")
+                    _err_message = ""
+                    if isinstance(_err_body, dict):
+                        _err_error = _err_body.get("error", {})
+                        if isinstance(_err_error, dict):
+                            _err_message = str(_err_error.get("message", "") or "")
+                        elif isinstance(_err_error, str):
+                            _err_message = _err_error
                     _is_generic_400 = (status_code == 400 and _err_message.strip().lower() in ("error", ""))
                     is_client_status_error = isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in _RETRYABLE_STATUS_CODES and not _is_generic_400
                     is_client_error = (is_local_validation_error or is_client_status_error or any(phrase in error_msg for phrase in [

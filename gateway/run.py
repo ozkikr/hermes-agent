@@ -309,6 +309,7 @@ def _resolve_runtime_agent_kwargs() -> dict:
         "command": runtime.get("command"),
         "args": list(runtime.get("args") or []),
         "credential_pool": runtime.get("credential_pool"),
+        "anthropic_refresh_enabled": runtime.get("anthropic_refresh_enabled", True),
     }
 
 
@@ -790,6 +791,7 @@ class GatewayRunner:
             "command": runtime_kwargs.get("command"),
             "args": list(runtime_kwargs.get("args") or []),
             "credential_pool": runtime_kwargs.get("credential_pool"),
+            "anthropic_refresh_enabled": runtime_kwargs.get("anthropic_refresh_enabled", True),
         }
         return resolve_turn_route(user_message, getattr(self, "_smart_model_routing", {}), primary)
 
@@ -6247,6 +6249,7 @@ class GatewayRunner:
                 runtime.get("base_url", ""),
                 runtime.get("provider", ""),
                 runtime.get("api_mode", ""),
+                bool(runtime.get("anthropic_refresh_enabled", True)),
                 sorted(enabled_toolsets) if enabled_toolsets else [],
                 # reasoning_config excluded — it's set per-message on the
                 # cached agent and doesn't affect system prompt or tools.
@@ -6629,6 +6632,7 @@ class GatewayRunner:
                         "command": runtime.get("command"),
                         "args": list(runtime.get("args") or []),
                         "credential_pool": runtime.get("credential_pool"),
+                        "anthropic_refresh_enabled": runtime.get("anthropic_refresh_enabled", True),
                     }
                     agent_fallback_model = resolved_runtime.get("remaining_fallbacks", self._fallback_model)
                     primary_error = format_runtime_provider_error(

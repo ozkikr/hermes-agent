@@ -104,6 +104,23 @@ class TestSmartRoutingPoolPreservation:
         result = resolve_turn_route("hi", routing_config, primary)
         assert result["runtime"]["credential_pool"] is fake_pool
 
+    def test_no_route_preserves_anthropic_refresh_flag(self):
+        from agent.smart_model_routing import resolve_turn_route
+
+        primary = {
+            "model": "claude-opus-4-6",
+            "api_key": "quotio-local-key",
+            "base_url": "http://localhost:8318",
+            "provider": "anthropic",
+            "api_mode": "anthropic_messages",
+            "command": None,
+            "args": [],
+            "anthropic_refresh_enabled": False,
+        }
+
+        result = resolve_turn_route("hello", None, primary)
+        assert result["runtime"]["anthropic_refresh_enabled"] is False
+
 
 # ---------------------------------------------------------------------------
 # 2 & 3. CLI and Gateway _resolve_turn_agent_config include credential_pool
@@ -144,6 +161,37 @@ class TestCliTurnRoutePool:
         assert "credential_pool" in captured["primary"]
         assert captured["primary"]["credential_pool"] is shell._credential_pool
 
+    def test_resolve_turn_includes_anthropic_refresh_flag(self, monkeypatch):
+        from agent.smart_model_routing import resolve_turn_route
+        captured = {}
+
+        def spy_resolve(user_message, routing_config, primary):
+            captured["primary"] = primary
+            return resolve_turn_route(user_message, routing_config, primary)
+
+        monkeypatch.setattr(
+            "agent.smart_model_routing.resolve_turn_route", spy_resolve
+        )
+
+        shell = SimpleNamespace(
+            model="claude-opus-4-6",
+            api_key="quotio-local-key",
+            base_url="http://localhost:8318",
+            provider="anthropic",
+            api_mode="anthropic_messages",
+            acp_command=None,
+            acp_args=[],
+            _credential_pool=None,
+            _anthropic_refresh_enabled=False,
+            _smart_model_routing={"enabled": False},
+        )
+
+        from cli import HermesCLI
+        bound = HermesCLI._resolve_turn_agent_config.__get__(shell)
+        bound("test message")
+
+        assert captured["primary"]["anthropic_refresh_enabled"] is False
+
 
 class TestGatewayTurnRoutePool:
     def test_resolve_turn_includes_pool(self, monkeypatch):
@@ -180,6 +228,40 @@ class TestGatewayTurnRoutePool:
 
         assert "credential_pool" in captured["primary"]
         assert captured["primary"]["credential_pool"] is runtime_kwargs["credential_pool"]
+
+    def test_resolve_turn_includes_anthropic_refresh_flag(self, monkeypatch):
+        from agent.smart_model_routing import resolve_turn_route
+        captured = {}
+
+        def spy_resolve(user_message, routing_config, primary):
+            captured["primary"] = primary
+            return resolve_turn_route(user_message, routing_config, primary)
+
+        monkeypatch.setattr(
+            "agent.smart_model_routing.resolve_turn_route", spy_resolve
+        )
+
+        from gateway.run import GatewayRunner
+
+        runner = SimpleNamespace(
+            _smart_model_routing={"enabled": False},
+        )
+
+        runtime_kwargs = {
+            "api_key": "quotio-local-key",
+            "base_url": "http://localhost:8318",
+            "provider": "anthropic",
+            "api_mode": "anthropic_messages",
+            "command": None,
+            "args": [],
+            "credential_pool": None,
+            "anthropic_refresh_enabled": False,
+        }
+
+        bound = GatewayRunner._resolve_turn_agent_config.__get__(runner)
+        bound("test message", "claude-opus-4-6", runtime_kwargs)
+
+        assert captured["primary"]["anthropic_refresh_enabled"] is False
 
 
 # ---------------------------------------------------------------------------
