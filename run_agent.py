@@ -4847,6 +4847,7 @@ class AIAgent:
             if fb_provider == "custom":
                 from hermes_cli.auth import has_usable_secret
 
+                explicit_api_key = ""
                 api_key_env = str(fb.get("api_key_env") or "").strip()
                 if api_key_env:
                     env_api_key = str(os.getenv(api_key_env, "") or "").strip()
