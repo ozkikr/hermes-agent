@@ -1528,6 +1528,33 @@ class AIAgent:
         content = re.sub(r'</?(?:think|thinking|reasoning|REASONING_SCRATCHPAD)>\s*', '', content, flags=re.IGNORECASE)
         return content
 
+    def _get_content_with_tools_segments(self) -> List[str]:
+        """Return buffered assistant contents from tool-calling turns."""
+        value = getattr(self, "_last_content_with_tools", None)
+        if not value:
+            return []
+        if isinstance(value, list):
+            return [segment for segment in value if isinstance(segment, str) and segment]
+        if isinstance(value, str):
+            return [value]
+        return []
+
+    def _consume_content_with_tools(self, final_response: str = "") -> str:
+        """Join buffered tool-call content with an optional final response."""
+        segments = self._get_content_with_tools_segments()
+        combined: List[str] = []
+        for segment in segments:
+            clean = self._strip_think_blocks(segment).strip()
+            if clean and (not combined or combined[-1] != clean):
+                combined.append(clean)
+
+        final_clean = self._strip_think_blocks(final_response).strip()
+        if final_clean and (not combined or combined[-1] != final_clean):
+            combined.append(final_clean)
+
+        self._last_content_with_tools = []
+        return "\n\n".join(combined)
+
     def _looks_like_codex_intermediate_ack(
         self,
         user_message: str,
@@ -6902,7 +6929,7 @@ class AIAgent:
         self._incomplete_scratchpad_retries = 0
         self._codex_incomplete_retries = 0
         self._thinking_prefill_retries = 0
-        self._last_content_with_tools = None
+        self._last_content_with_tools = []
         self._mute_post_response = False
         self._surrogate_sanitized = False
 
@@ -8811,7 +8838,7 @@ class AIAgent:
                     # turn. If the follow-up turn after tools is empty, we use this.
                     turn_content = assistant_message.content or ""
                     if turn_content and self._has_content_after_think_block(turn_content):
-                        self._last_content_with_tools = turn_content
+                        self._last_content_with_tools.append(turn_content)
                         # Only mute subsequent output when EVERY tool call in
                         # this turn is post-response housekeeping (memory, todo,
                         # skill_manage, etc.).  If any substantive tool is present
@@ -8934,10 +8961,9 @@ class AIAgent:
                         # tool calls (e.g. "You're welcome!" + memory save), the model
                         # has nothing more to say. Use the earlier content immediately
                         # instead of wasting API calls on retries that won't help.
-                        fallback = getattr(self, '_last_content_with_tools', None)
+                        fallback = self._get_content_with_tools_segments()
                         if fallback:
                             logger.debug("Empty follow-up after tool calls — using prior turn content as final response")
-                            self._last_content_with_tools = None
                             self._empty_content_retries = 0
                             for i in range(len(messages) - 1, -1, -1):
                                 msg = messages[i]
@@ -8949,7 +8975,7 @@ class AIAgent:
                                         tool_names.append(fn.get("name", "unknown"))
                                     msg["content"] = f"Calling the {', '.join(tool_names)} tool{'s' if len(tool_names) > 1 else ''}..."
                                     break
-                            final_response = self._strip_think_blocks(fallback).strip()
+                            final_response = self._consume_content_with_tools()
                             self._response_was_previewed = True
                             break
 
@@ -9035,6 +9061,13 @@ class AIAgent:
                         final_response = truncated_response_prefix + final_response
                         truncated_response_prefix = ""
                         length_continue_retries = 0
+
+                    fallback = self._get_content_with_tools_segments()
+                    if fallback and self._has_content_after_think_block(final_response):
+                        logger.debug(
+                            "Combining buffered content-with-tools turns with final response"
+                        )
+                        final_response = self._consume_content_with_tools(final_response)
                     
                     # Strip <think> blocks from user-facing response (keep raw in messages for trajectory)
                     final_response = self._strip_think_blocks(final_response).strip()

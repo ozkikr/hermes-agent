@@ -32,6 +32,9 @@ _DONE = object()
 # new one so that subsequent text appears below tool progress messages.
 _NEW_SEGMENT = object()
 
+# Sentinel to replace accumulated streamed text with the true final response.
+_FINAL_TEXT = object()
+
 
 @dataclass
 class StreamConsumerConfig:
@@ -76,12 +79,18 @@ class GatewayStreamConsumer:
         self._last_sent_text = ""   # Track last-sent text to skip redundant edits
         self._fallback_final_send = False
         self._fallback_prefix = ""
+        self._received_any_delta = False
 
     @property
     def already_sent(self) -> bool:
         """True if at least one message was sent/edited — signals the base
         adapter to skip re-sending the final response."""
         return self._already_sent
+
+    @property
+    def received_any_delta(self) -> bool:
+        """True once any visible text delta has been received."""
+        return self._received_any_delta
 
     def on_delta(self, text: str) -> None:
         """Thread-safe callback — called from the agent's worker thread.
@@ -91,9 +100,15 @@ class GatewayStreamConsumer:
         appears below any tool-progress messages the gateway sent in between.
         """
         if text:
+            self._received_any_delta = True
             self._queue.put(text)
         elif text is None:
             self._queue.put(_NEW_SEGMENT)
+
+    def set_final_text(self, text: str) -> None:
+        """Replace accumulated visible text with the true final response."""
+        if text:
+            self._queue.put((_FINAL_TEXT, text))
 
     def finish(self) -> None:
         """Signal that the stream is complete."""
@@ -113,6 +128,13 @@ class GatewayStreamConsumer:
                 while True:
                     try:
                         item = self._queue.get_nowait()
+                        if (
+                            isinstance(item, tuple)
+                            and len(item) == 2
+                            and item[0] is _FINAL_TEXT
+                        ):
+                            self._accumulated = item[1]
+                            continue
                         if item is _DONE:
                             got_done = True
                             break

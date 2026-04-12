@@ -6580,6 +6580,23 @@ class GatewayRunner:
             # `_resolve_turn_agent_config(message, …)`.
             nonlocal message
 
+            def _finalize_stream_consumer(display_text: str | None = None) -> None:
+                if _stream_consumer is None:
+                    return
+                try:
+                    if (
+                        display_text
+                        and getattr(_stream_consumer, "received_any_delta", False)
+                    ):
+                        _stream_consumer.set_final_text(display_text)
+                except Exception as _stream_finalize_err:
+                    logger.debug(
+                        "Could not set final stream text: %s",
+                        _stream_finalize_err,
+                    )
+                finally:
+                    _stream_consumer.finish()
+
             # Pass session_key to process registry via env var so background
             # processes can be mapped back to this gateway session
             os.environ["HERMES_SESSION_KEY"] = session_key or ""
@@ -6920,10 +6937,6 @@ class GatewayRunner:
                 unregister_gateway_notify(_approval_session_key)
                 reset_current_session_key(_approval_session_token)
             result_holder[0] = result
-
-            # Signal the stream consumer that the agent is done
-            if _stream_consumer is not None:
-                _stream_consumer.finish()
             
             # Return final response, or a message if something went wrong
             final_response = result.get("final_response")
@@ -6940,6 +6953,7 @@ class GatewayRunner:
             _resolved_model = getattr(_agent, "model", None) if _agent else None
 
             if not final_response:
+                _finalize_stream_consumer()
                 error_msg = f"⚠️ {result['error']}" if result.get("error") else "(No response generated)"
                 return {
                     "final_response": error_msg,
@@ -6987,6 +7001,8 @@ class GatewayRunner:
                     if has_voice_directive:
                         unique_tags.insert(0, "[[audio_as_voice]]")
                     final_response = final_response + "\n" + "\n".join(unique_tags)
+
+            _finalize_stream_consumer(result.get("final_response"))
             
             # Sync session_id: the agent may have created a new session during
             # mid-run context compression (_compress_context splits sessions).

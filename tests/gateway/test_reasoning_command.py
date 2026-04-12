@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 import gateway.run as gateway_run
-from gateway.config import Platform
+from gateway.config import Platform, StreamingConfig
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource
 
@@ -214,6 +214,127 @@ class TestReasoningCommand:
         assert result["final_response"] == "ok"
         assert _CapturingAgent.last_init is not None
         assert _CapturingAgent.last_init["reasoning_config"] == {"enabled": False}
+
+    def test_run_agent_overrides_streamed_text_with_final_response(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / "hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text("", encoding="utf-8")
+
+        monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+        monkeypatch.setattr(gateway_run, "_env_path", hermes_home / ".env")
+        monkeypatch.setattr(gateway_run, "load_dotenv", lambda *args, **kwargs: None)
+        monkeypatch.setattr(gateway_run, "_load_gateway_config", lambda: {})
+        monkeypatch.setattr(gateway_run, "_resolve_gateway_model", lambda cfg=None: "test/model")
+        monkeypatch.setattr(
+            gateway_run,
+            "_resolve_runtime_agent_kwargs",
+            lambda: {
+                "provider": "openrouter",
+                "api_mode": "chat_completions",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "test-key",
+            },
+        )
+
+        class _StreamingAgent:
+            def __init__(self, *args, **kwargs):
+                self.tools = []
+                self.stream_delta_callback = None
+
+            def run_conversation(self, user_message: str, conversation_history=None, task_id=None):
+                if self.stream_delta_callback:
+                    self.stream_delta_callback("Done.")
+                return {
+                    "final_response": "Found the prompt.\n\nDone.",
+                    "messages": [],
+                    "api_calls": 1,
+                }
+
+        class _FakeStreamConsumer:
+            instances = []
+
+            def __init__(self, adapter, chat_id, config=None, metadata=None):
+                self.adapter = adapter
+                self.chat_id = chat_id
+                self.config = config
+                self.metadata = metadata
+                self.final_text = None
+                self._already_sent = False
+                self._received_any_delta = False
+                self._finished = False
+                type(self).instances.append(self)
+
+            @property
+            def already_sent(self):
+                return self._already_sent
+
+            @property
+            def received_any_delta(self):
+                return self._received_any_delta
+
+            def on_delta(self, text):
+                if text:
+                    self._received_any_delta = True
+                    self._already_sent = True
+
+            def set_final_text(self, text):
+                self.final_text = text
+
+            def finish(self):
+                self._finished = True
+
+            async def run(self):
+                while not self._finished:
+                    await asyncio.sleep(0)
+
+        fake_run_agent = types.ModuleType("run_agent")
+        fake_run_agent.AIAgent = _StreamingAgent
+        monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+        import gateway.stream_consumer as gateway_stream_consumer
+
+        monkeypatch.setattr(
+            gateway_stream_consumer,
+            "GatewayStreamConsumer",
+            _FakeStreamConsumer,
+        )
+
+        runner = _make_runner()
+        runner.config = types.SimpleNamespace(
+            streaming=StreamingConfig(
+                enabled=True,
+                transport="edit",
+                edit_interval=0.0,
+                buffer_threshold=1,
+                cursor="",
+            )
+        )
+        adapter = MagicMock()
+        adapter.has_pending_interrupt.return_value = False
+        adapter.get_pending_message.return_value = None
+        runner.adapters = {Platform.TELEGRAM: adapter}
+
+        source = SessionSource(
+            platform=Platform.TELEGRAM,
+            chat_id="chat-1",
+            chat_name="Test Chat",
+            chat_type="dm",
+            user_id="user-1",
+        )
+
+        result = asyncio.run(
+            runner._run_agent(
+                message="ping",
+                context_prompt="",
+                history=[],
+                source=source,
+                session_id="session-1",
+                session_key="agent:main:telegram:dm:chat-1",
+            )
+        )
+
+        consumer = _FakeStreamConsumer.instances[0]
+        assert consumer.final_text == "Found the prompt.\n\nDone."
+        assert result["already_sent"] is True
 
     def test_run_agent_uses_fallback_when_primary_auth_fails(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / "hermes"

@@ -1452,6 +1452,66 @@ class TestRunConversation:
         assert mock_handle_function_call.call_args.kwargs["tool_call_id"] == "c1"
         assert mock_handle_function_call.call_args.kwargs["session_id"] == agent.session_id
 
+    def test_tool_call_content_is_combined_with_non_empty_final_response(self, agent):
+        self._setup_agent(agent)
+        tc = _mock_tool_call(name="web_search", arguments="{}", call_id="c1")
+        resp1 = _mock_response(
+            content="I found the relevant pieces.",
+            finish_reason="tool_calls",
+            tool_calls=[tc],
+        )
+        resp2 = _mock_response(
+            content="<think>wrap-up</think> Here are the final details.",
+            finish_reason="stop",
+        )
+        agent.client.chat.completions.create.side_effect = [resp1, resp2]
+        with (
+            patch("run_agent.handle_function_call", return_value="search result"),
+            patch.object(agent, "_persist_session"),
+            patch.object(agent, "_save_trajectory"),
+            patch.object(agent, "_cleanup_task_resources"),
+        ):
+            result = agent.run_conversation("search something")
+        assert (
+            result["final_response"]
+            == "I found the relevant pieces.\n\nHere are the final details."
+        )
+        assert result["response_previewed"] is False
+        assert result["api_calls"] == 2
+
+    def test_multiple_tool_call_contents_are_combined_with_final_response(self, agent):
+        self._setup_agent(agent)
+        tc1 = _mock_tool_call(name="web_search", arguments="{}", call_id="c1")
+        tc2 = _mock_tool_call(name="web_search", arguments="{}", call_id="c2")
+        resp1 = _mock_response(
+            content="Found the prompt.",
+            finish_reason="tool_calls",
+            tool_calls=[tc1],
+        )
+        resp2 = _mock_response(
+            content="Now tightening the instructions.",
+            finish_reason="tool_calls",
+            tool_calls=[tc2],
+        )
+        resp3 = _mock_response(
+            content="<think>wrap-up</think> Done.",
+            finish_reason="stop",
+        )
+        agent.client.chat.completions.create.side_effect = [resp1, resp2, resp3]
+        with (
+            patch("run_agent.handle_function_call", return_value="ok"),
+            patch.object(agent, "_persist_session"),
+            patch.object(agent, "_save_trajectory"),
+            patch.object(agent, "_cleanup_task_resources"),
+        ):
+            result = agent.run_conversation("search something")
+        assert (
+            result["final_response"]
+            == "Found the prompt.\n\nNow tightening the instructions.\n\nDone."
+        )
+        assert result["response_previewed"] is False
+        assert result["api_calls"] == 3
+
     def test_request_scoped_api_hooks_fire_for_each_api_call(self, agent):
         self._setup_agent(agent)
         tc = _mock_tool_call(name="web_search", arguments="{}", call_id="c1")
